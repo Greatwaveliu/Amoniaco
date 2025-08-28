@@ -183,9 +183,9 @@ def parity_j_for_eta(eta, c_el_MWh, params, cB, j_lo=50.0, j_hi=50000.0, tol=1e-
 class LCOAGUI:
     def __init__(self, root):
         self.root = root
-        root.title("LCOA - NRR Directa (BoP, degradación, E_spec y Paridad vs Precio)")
-        # Valores por defecto de los parámetros principales
-        self.defaults = {
+        root.title("LCOA - Comparación de tecnologías")
+        # Valores por defecto para cada tecnología
+        direct_defaults = {
             "eta_fe": "0.60",
             "j_tot": "1000",
             "U_cell": "2.5",
@@ -208,10 +208,27 @@ class LCOAGUI:
             "rep_frac_of_CAPEX_power": "0",
             "c_B": "1.0",
         }
+        li_defaults = dict(direct_defaults)
+        # Diccionarios de parámetros por tecnología
+        self.tech_defaults = {
+            "NRR Directa": direct_defaults,
+            "NRR Li-mediada": li_defaults,
+        }
+        self.tech_params = {k: dict(v) for k, v in self.tech_defaults.items()}
+        self.tech_names = list(self.tech_defaults.keys())
+        self.current_tech = tk.StringVar(value=self.tech_names[0])
         self.make_widgets()
         self._make_menu()
 
     def make_widgets(self):
+        top = ttk.Frame(self.root, padding=8)
+        top.pack(fill="x")
+        ttk.Label(top, text="Tecnología:").pack(side="left")
+        self.cbo_tech = ttk.Combobox(top, values=self.tech_names, state="readonly",
+                                     textvariable=self.current_tech)
+        self.cbo_tech.pack(side="left", padx=4)
+        self.cbo_tech.bind("<<ComboboxSelected>>", self.on_switch_tech)
+
         nb = ttk.Notebook(self.root)
         nb.pack(fill="both", expand=True, padx=8, pady=8)
 
@@ -233,36 +250,37 @@ class LCOAGUI:
         mid   = ttk.Frame(frm);  mid.grid(row=0, column=1, sticky="n", padx=15)
         right = ttk.Frame(frm); right.grid(row=0, column=2, sticky="n")
 
+        defaults = self.tech_defaults[self.tech_names[0]]
         # Entradas base
-        self.entry_eta = self._add_entry(left, "η_FE base (0-1):", self.defaults["eta_fe"])
-        self.entry_j   = self._add_entry(left, "j_tot base (A/m²):", self.defaults["j_tot"])
-        self.entry_U   = self._add_entry(left, "U_cell (V):", self.defaults["U_cell"])
-        self.entry_A   = self._add_entry(left, "Área A (m²):", self.defaults["A"])
-        self.entry_cA  = self._add_entry(left, "c_A (€/m²):", self.defaults["c_A"])
-        self.entry_cP  = self._add_entry(left, "c_P (€/kW):", self.defaults["c_P"])
-        self.entry_cel = self._add_entry(left, "c_el (€/MWh):", self.defaults["c_el_MWh"])
-        self.entry_fO  = self._add_entry(left, "f_O&M (-):", self.defaults["f_OandM"])
-        self.entry_i   = self._add_entry(left, "i (tasa interés):", self.defaults["i"])
-        self.entry_N   = self._add_entry(left, "N (años):", self.defaults["N"])
-        self.entry_top = self._add_entry(left, "t_op (h/año):", self.defaults["t_op"])
+        self.entry_eta = self._add_entry(left, "η_FE base (0-1):", defaults["eta_fe"])
+        self.entry_j   = self._add_entry(left, "j_tot base (A/m²):", defaults["j_tot"])
+        self.entry_U   = self._add_entry(left, "U_cell (V):", defaults["U_cell"])
+        self.entry_A   = self._add_entry(left, "Área A (m²):", defaults["A"])
+        self.entry_cA  = self._add_entry(left, "c_A (€/m²):", defaults["c_A"])
+        self.entry_cP  = self._add_entry(left, "c_P (€/kW):", defaults["c_P"])
+        self.entry_cel = self._add_entry(left, "c_el (€/MWh):", defaults["c_el_MWh"])
+        self.entry_fO  = self._add_entry(left, "f_O&M (-):", defaults["f_OandM"])
+        self.entry_i   = self._add_entry(left, "i (tasa interés):", defaults["i"])
+        self.entry_N   = self._add_entry(left, "N (años):", defaults["N"])
+        self.entry_top = self._add_entry(left, "t_op (h/año):", defaults["t_op"])
 
         # BoP + Disponibilidad
         ttk.Label(mid, text="Balance de Planta (BoP)").pack(anchor="w", pady=(6,2))
-        self.entry_cA_bop = self._add_entry(mid, "c_A BoP extra (€/m²):", self.defaults["cA_BoP_extra"])
-        self.entry_cP_bop = self._add_entry(mid, "c_P BoP extra (€/kW):", self.defaults["cP_BoP_extra"])
-        self.entry_opex_bop = self._add_entry(mid, "OPEX BoP extra (€/año):", self.defaults["OPEX_BoP_extra_year"])
+        self.entry_cA_bop = self._add_entry(mid, "c_A BoP extra (€/m²):", defaults["cA_BoP_extra"])
+        self.entry_cP_bop = self._add_entry(mid, "c_P BoP extra (€/kW):", defaults["cP_BoP_extra"])
+        self.entry_opex_bop = self._add_entry(mid, "OPEX BoP extra (€/año):", defaults["OPEX_BoP_extra_year"])
         ttk.Label(mid, text="Disponibilidad y Degradación").pack(anchor="w", pady=(10,2))
-        self.entry_avail = self._add_entry(mid, "Disponibilidad (0-1):", self.defaults["availability"])
-        self.entry_deg_eta = self._add_entry(mid, "Degradación η_FE (%/año):", self.defaults["deg_eta_yearly"])
-        self.entry_deg_j   = self._add_entry(mid, "Degradación j_tot (%/año):", self.defaults["deg_j_yearly"])
+        self.entry_avail = self._add_entry(mid, "Disponibilidad (0-1):", defaults["availability"])
+        self.entry_deg_eta = self._add_entry(mid, "Degradación η_FE (%/año):", defaults["deg_eta_yearly"])
+        self.entry_deg_j   = self._add_entry(mid, "Degradación j_tot (%/año):", defaults["deg_j_yearly"])
 
         # Reemplazos y c_B
         ttk.Label(right, text="Reemplazos periódicos").pack(anchor="w", pady=(6,2))
-        self.entry_rep_every = self._add_entry(right, "Cada k años:", self.defaults["rep_interval_years"])
-        self.entry_rep_fracA = self._add_entry(right, "Frac. CAPEX área a reemplazar:", self.defaults["rep_frac_of_CAPEX_area"])
-        self.entry_rep_fracP = self._add_entry(right, "Frac. CAPEX potencia a reemplazar:", self.defaults["rep_frac_of_CAPEX_power"])
+        self.entry_rep_every = self._add_entry(right, "Cada k años:", defaults["rep_interval_years"])
+        self.entry_rep_fracA = self._add_entry(right, "Frac. CAPEX área a reemplazar:", defaults["rep_frac_of_CAPEX_area"])
+        self.entry_rep_fracP = self._add_entry(right, "Frac. CAPEX potencia a reemplazar:", defaults["rep_frac_of_CAPEX_power"])
         ttk.Label(right, text="Precio de referencia (c_B)").pack(anchor="w", pady=(10,2))
-        self.entry_cb = self._add_entry(right, "c_B (€/kg):", self.defaults["c_B"])
+        self.entry_cb = self._add_entry(right, "c_B (€/kg):", defaults["c_B"])
 
         # Mapa de entradas para guardar/cargar parámetros fácilmente
         self.entry_map = {
@@ -292,6 +310,7 @@ class LCOAGUI:
         # Botones
         btns = ttk.Frame(self.tab_inputs, padding=8); btns.pack(fill="x")
         ttk.Button(btns, text="Calcular LCOA", command=self.on_calculate).pack(side="left", padx=4)
+        ttk.Button(btns, text="Comparar tecnologías", command=self.on_compare).pack(side="left", padx=4)
         ttk.Button(btns, text="Mostrar desglose", command=self.on_breakdown).pack(side="left", padx=4)
         ttk.Button(btns, text="Comprobar unidades", command=self.on_units_check).pack(side="left", padx=4)
         ttk.Button(btns, text="Restablecer", command=self.reset_defaults).pack(side="left", padx=4)
@@ -299,6 +318,9 @@ class LCOAGUI:
 
         self.lbl_res = ttk.Label(self.tab_inputs, text="LCOA = —", font=("Segoe UI", 12, "bold"))
         self.lbl_res.pack(pady=6)
+
+        # Cargar parámetros iniciales de la tecnología seleccionada
+        self.on_switch_tech()
 
         # --- Tab: Sensibilidades 2D (LCOA) ---
         fs = ttk.Frame(self.tab_sens, padding=8); fs.pack(fill="both", expand=True)
@@ -416,6 +438,7 @@ class LCOAGUI:
             raise ValueError("Disponibilidad debe estar en (0,1].")
         if params["N"] <= 0:
             raise ValueError("N (años) debe ser > 0.")
+        self.tech_params[self.current_tech.get()] = dict(params)
         return params
 
     # ------ Gestión de parámetros: cargar/guardar/restablecer ------
@@ -431,10 +454,12 @@ class LCOAGUI:
         self.root.config(menu=menubar)
 
     def reset_defaults(self):
+        params = self.tech_defaults[self.current_tech.get()]
         for key, entry in self.entry_map.items():
-            if key in self.defaults:
-                entry.delete(0, tk.END)
-                entry.insert(0, self.defaults[key])
+            entry.delete(0, tk.END)
+            if key in params:
+                entry.insert(0, params[key])
+        self.lbl_res.config(text="LCOA = —")
 
     def save_params(self):
         path = filedialog.asksaveasfilename(title="Guardar parámetros", defaultextension=".json",
@@ -445,6 +470,7 @@ class LCOAGUI:
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
+            self.tech_params[self.current_tech.get()] = data
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo guardar: {e}")
 
@@ -464,6 +490,28 @@ class LCOAGUI:
                 ent = self.entry_map[key]
                 ent.delete(0, tk.END)
                 ent.insert(0, str(val))
+                self.tech_params[self.current_tech.get()][key] = val
+
+    def on_switch_tech(self, event=None):
+        tech = self.current_tech.get()
+        params = self.tech_params.get(tech, self.tech_defaults[tech])
+        for key, entry in self.entry_map.items():
+            entry.delete(0, tk.END)
+            if key in params:
+                entry.insert(0, str(params[key]))
+        self.lbl_res.config(text="LCOA = —")
+
+    def on_compare(self):
+        try:
+            current = self._read_params()
+            self.tech_params[self.current_tech.get()] = dict(current)
+            lines = []
+            for tech in self.tech_names:
+                val, _ = lcoa_levelized(self.tech_params[tech])
+                lines.append(f"{tech}: {val:.4f} €/kg")
+            messagebox.showinfo("Comparación de tecnologías", "\n".join(lines))
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
 
     # ------ Acciones principales ------
     def on_calculate(self):
