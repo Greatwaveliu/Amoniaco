@@ -10,7 +10,7 @@ GUI LCOA para NRR directa con:
   * Tabla y exportación a CSV (tabla y curvas completas)
 """
 
-import sys, signal, csv
+import sys, signal, csv, json
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import numpy as np
@@ -184,7 +184,32 @@ class LCOAGUI:
     def __init__(self, root):
         self.root = root
         root.title("LCOA - NRR Directa (BoP, degradación, E_spec y Paridad vs Precio)")
+        # Valores por defecto de los parámetros principales
+        self.defaults = {
+            "eta_fe": "0.60",
+            "j_tot": "1000",
+            "U_cell": "2.5",
+            "A": "10",
+            "c_A": "4298.9",
+            "c_P": "240.5",
+            "c_el_MWh": "30",
+            "f_OandM": "0.04",
+            "i": "0.08",
+            "N": "10",
+            "t_op": "8000",
+            "cA_BoP_extra": "0",
+            "cP_BoP_extra": "0",
+            "OPEX_BoP_extra_year": "0",
+            "availability": "0.95",
+            "deg_eta_yearly": "0",
+            "deg_j_yearly": "0",
+            "rep_interval_years": "0",
+            "rep_frac_of_CAPEX_area": "0",
+            "rep_frac_of_CAPEX_power": "0",
+            "c_B": "1.0",
+        }
         self.make_widgets()
+        self._make_menu()
 
     def make_widgets(self):
         nb = ttk.Notebook(self.root)
@@ -209,41 +234,67 @@ class LCOAGUI:
         right = ttk.Frame(frm); right.grid(row=0, column=2, sticky="n")
 
         # Entradas base
-        self.entry_eta = self._add_entry(left, "η_FE base (0-1):", "0.60")
-        self.entry_j   = self._add_entry(left, "j_tot base (A/m²):", "1000")
-        self.entry_U   = self._add_entry(left, "U_cell (V):", "2.5")
-        self.entry_A   = self._add_entry(left, "Área A (m²):", "10")
-        self.entry_cA  = self._add_entry(left, "c_A (€/m²):", "4298.9")
-        self.entry_cP  = self._add_entry(left, "c_P (€/kW):", "240.5")
-        self.entry_cel = self._add_entry(left, "c_el (€/MWh):", "30")
-        self.entry_fO  = self._add_entry(left, "f_O&M (-):", "0.04")
-        self.entry_i   = self._add_entry(left, "i (tasa interés):", "0.08")
-        self.entry_N   = self._add_entry(left, "N (años):", "10")
-        self.entry_top = self._add_entry(left, "t_op (h/año):", "8000")
+        self.entry_eta = self._add_entry(left, "η_FE base (0-1):", self.defaults["eta_fe"])
+        self.entry_j   = self._add_entry(left, "j_tot base (A/m²):", self.defaults["j_tot"])
+        self.entry_U   = self._add_entry(left, "U_cell (V):", self.defaults["U_cell"])
+        self.entry_A   = self._add_entry(left, "Área A (m²):", self.defaults["A"])
+        self.entry_cA  = self._add_entry(left, "c_A (€/m²):", self.defaults["c_A"])
+        self.entry_cP  = self._add_entry(left, "c_P (€/kW):", self.defaults["c_P"])
+        self.entry_cel = self._add_entry(left, "c_el (€/MWh):", self.defaults["c_el_MWh"])
+        self.entry_fO  = self._add_entry(left, "f_O&M (-):", self.defaults["f_OandM"])
+        self.entry_i   = self._add_entry(left, "i (tasa interés):", self.defaults["i"])
+        self.entry_N   = self._add_entry(left, "N (años):", self.defaults["N"])
+        self.entry_top = self._add_entry(left, "t_op (h/año):", self.defaults["t_op"])
 
         # BoP + Disponibilidad
         ttk.Label(mid, text="Balance de Planta (BoP)").pack(anchor="w", pady=(6,2))
-        self.entry_cA_bop = self._add_entry(mid, "c_A BoP extra (€/m²):", "0")
-        self.entry_cP_bop = self._add_entry(mid, "c_P BoP extra (€/kW):", "0")
-        self.entry_opex_bop = self._add_entry(mid, "OPEX BoP extra (€/año):", "0")
+        self.entry_cA_bop = self._add_entry(mid, "c_A BoP extra (€/m²):", self.defaults["cA_BoP_extra"])
+        self.entry_cP_bop = self._add_entry(mid, "c_P BoP extra (€/kW):", self.defaults["cP_BoP_extra"])
+        self.entry_opex_bop = self._add_entry(mid, "OPEX BoP extra (€/año):", self.defaults["OPEX_BoP_extra_year"])
         ttk.Label(mid, text="Disponibilidad y Degradación").pack(anchor="w", pady=(10,2))
-        self.entry_avail = self._add_entry(mid, "Disponibilidad (0-1):", "0.95")
-        self.entry_deg_eta = self._add_entry(mid, "Degradación η_FE (%/año):", "0")
-        self.entry_deg_j   = self._add_entry(mid, "Degradación j_tot (%/año):", "0")
+        self.entry_avail = self._add_entry(mid, "Disponibilidad (0-1):", self.defaults["availability"])
+        self.entry_deg_eta = self._add_entry(mid, "Degradación η_FE (%/año):", self.defaults["deg_eta_yearly"])
+        self.entry_deg_j   = self._add_entry(mid, "Degradación j_tot (%/año):", self.defaults["deg_j_yearly"])
 
         # Reemplazos y c_B
         ttk.Label(right, text="Reemplazos periódicos").pack(anchor="w", pady=(6,2))
-        self.entry_rep_every = self._add_entry(right, "Cada k años:", "0")
-        self.entry_rep_fracA = self._add_entry(right, "Frac. CAPEX área a reemplazar:", "0")
-        self.entry_rep_fracP = self._add_entry(right, "Frac. CAPEX potencia a reemplazar:", "0")
+        self.entry_rep_every = self._add_entry(right, "Cada k años:", self.defaults["rep_interval_years"])
+        self.entry_rep_fracA = self._add_entry(right, "Frac. CAPEX área a reemplazar:", self.defaults["rep_frac_of_CAPEX_area"])
+        self.entry_rep_fracP = self._add_entry(right, "Frac. CAPEX potencia a reemplazar:", self.defaults["rep_frac_of_CAPEX_power"])
         ttk.Label(right, text="Precio de referencia (c_B)").pack(anchor="w", pady=(10,2))
-        self.entry_cb = self._add_entry(right, "c_B (€/kg):", "1.0")
+        self.entry_cb = self._add_entry(right, "c_B (€/kg):", self.defaults["c_B"])
+
+        # Mapa de entradas para guardar/cargar parámetros fácilmente
+        self.entry_map = {
+            "eta_fe": self.entry_eta,
+            "j_tot": self.entry_j,
+            "U_cell": self.entry_U,
+            "A": self.entry_A,
+            "c_A": self.entry_cA,
+            "c_P": self.entry_cP,
+            "c_el_MWh": self.entry_cel,
+            "f_OandM": self.entry_fO,
+            "i": self.entry_i,
+            "N": self.entry_N,
+            "t_op": self.entry_top,
+            "cA_BoP_extra": self.entry_cA_bop,
+            "cP_BoP_extra": self.entry_cP_bop,
+            "OPEX_BoP_extra_year": self.entry_opex_bop,
+            "availability": self.entry_avail,
+            "deg_eta_yearly": self.entry_deg_eta,
+            "deg_j_yearly": self.entry_deg_j,
+            "rep_interval_years": self.entry_rep_every,
+            "rep_frac_of_CAPEX_area": self.entry_rep_fracA,
+            "rep_frac_of_CAPEX_power": self.entry_rep_fracP,
+            "c_B": self.entry_cb,
+        }
 
         # Botones
         btns = ttk.Frame(self.tab_inputs, padding=8); btns.pack(fill="x")
         ttk.Button(btns, text="Calcular LCOA", command=self.on_calculate).pack(side="left", padx=4)
         ttk.Button(btns, text="Mostrar desglose", command=self.on_breakdown).pack(side="left", padx=4)
         ttk.Button(btns, text="Comprobar unidades", command=self.on_units_check).pack(side="left", padx=4)
+        ttk.Button(btns, text="Restablecer", command=self.reset_defaults).pack(side="left", padx=4)
         ttk.Button(btns, text="Salir", command=self.root.destroy).pack(side="right")
 
         self.lbl_res = ttk.Label(self.tab_inputs, text="LCOA = —", font=("Segoe UI", 12, "bold"))
@@ -366,6 +417,53 @@ class LCOAGUI:
         if params["N"] <= 0:
             raise ValueError("N (años) debe ser > 0.")
         return params
+
+    # ------ Gestión de parámetros: cargar/guardar/restablecer ------
+    def _make_menu(self):
+        menubar = tk.Menu(self.root)
+        filemenu = tk.Menu(menubar, tearoff=0)
+        filemenu.add_command(label="Cargar parámetros…", command=self.load_params)
+        filemenu.add_command(label="Guardar parámetros…", command=self.save_params)
+        filemenu.add_command(label="Restablecer valores", command=self.reset_defaults)
+        filemenu.add_separator()
+        filemenu.add_command(label="Salir", command=self.root.destroy)
+        menubar.add_cascade(label="Archivo", menu=filemenu)
+        self.root.config(menu=menubar)
+
+    def reset_defaults(self):
+        for key, entry in self.entry_map.items():
+            if key in self.defaults:
+                entry.delete(0, tk.END)
+                entry.insert(0, self.defaults[key])
+
+    def save_params(self):
+        path = filedialog.asksaveasfilename(title="Guardar parámetros", defaultextension=".json",
+                                            filetypes=[("JSON", "*.json"), ("Todos", "*.*")])
+        if not path:
+            return
+        data = {k: self.entry_map[k].get() for k in self.entry_map}
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo guardar: {e}")
+
+    def load_params(self):
+        path = filedialog.askopenfilename(title="Cargar parámetros", defaultextension=".json",
+                                          filetypes=[("JSON", "*.json"), ("Todos", "*.*")])
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo leer: {e}")
+            return
+        for key, val in data.items():
+            if key in self.entry_map:
+                ent = self.entry_map[key]
+                ent.delete(0, tk.END)
+                ent.insert(0, str(val))
 
     # ------ Acciones principales ------
     def on_calculate(self):
