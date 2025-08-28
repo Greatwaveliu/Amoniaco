@@ -15,6 +15,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Button
 
 # ---------- Constantes físico-químicas ----------
 F = 96485.0      # C/mol
@@ -183,35 +184,52 @@ def parity_j_for_eta(eta, c_el_MWh, params, cB, j_lo=50.0, j_hi=50000.0, tol=1e-
 class LCOAGUI:
     def __init__(self, root):
         self.root = root
-        root.title("LCOA - NRR Directa (BoP, degradación, E_spec y Paridad vs Precio)")
-        # Valores por defecto de los parámetros principales
-        self.defaults = {
-            "eta_fe": "0.60",
-            "j_tot": "1000",
-            "U_cell": "2.5",
-            "A": "10",
-            "c_A": "4298.9",
-            "c_P": "240.5",
-            "c_el_MWh": "30",
-            "f_OandM": "0.04",
-            "i": "0.08",
-            "N": "10",
-            "t_op": "8000",
-            "cA_BoP_extra": "0",
-            "cP_BoP_extra": "0",
-            "OPEX_BoP_extra_year": "0",
-            "availability": "0.95",
-            "deg_eta_yearly": "0",
-            "deg_j_yearly": "0",
-            "rep_interval_years": "0",
-            "rep_frac_of_CAPEX_area": "0",
-            "rep_frac_of_CAPEX_power": "0",
-            "c_B": "1.0",
+        root.title("LCOA - Comparación de tecnologías")
+        # Valores por defecto para cada tecnología (numéricos)
+        direct_defaults = {
+            "eta_fe": 0.60,
+            "j_tot": 1000.0,
+            "U_cell": 2.5,
+            "A": 10.0,
+            "c_A": 4298.9,
+            "c_P": 240.5,
+            "c_el_MWh": 30.0,
+            "f_OandM": 0.04,
+            "i": 0.08,
+            "N": 10,
+            "t_op": 8000.0,
+            "cA_BoP_extra": 0.0,
+            "cP_BoP_extra": 0.0,
+            "OPEX_BoP_extra_year": 0.0,
+            "availability": 0.95,
+            "deg_eta_yearly": 0.0,
+            "deg_j_yearly": 0.0,
+            "rep_interval_years": 0,
+            "rep_frac_of_CAPEX_area": 0.0,
+            "rep_frac_of_CAPEX_power": 0.0,
+            "c_B": 1.0,
         }
+        li_defaults = dict(direct_defaults)
+        # Diccionarios de parámetros por tecnología
+        self.tech_defaults = {
+            "NRR Directa": direct_defaults,
+            "NRR Li-mediada": li_defaults,
+        }
+        self.tech_params = {k: dict(v) for k, v in self.tech_defaults.items()}
+        self.tech_names = list(self.tech_defaults.keys())
+        self.current_tech = tk.StringVar(value=self.tech_names[0])
         self.make_widgets()
         self._make_menu()
 
     def make_widgets(self):
+        top = ttk.Frame(self.root, padding=8)
+        top.pack(fill="x")
+        ttk.Label(top, text="Tecnología:").pack(side="left")
+        self.cbo_tech = ttk.Combobox(top, values=self.tech_names, state="readonly",
+                                     textvariable=self.current_tech)
+        self.cbo_tech.pack(side="left", padx=4)
+        self.cbo_tech.bind("<<ComboboxSelected>>", self.on_switch_tech)
+
         nb = ttk.Notebook(self.root)
         nb.pack(fill="both", expand=True, padx=8, pady=8)
 
@@ -233,36 +251,37 @@ class LCOAGUI:
         mid   = ttk.Frame(frm);  mid.grid(row=0, column=1, sticky="n", padx=15)
         right = ttk.Frame(frm); right.grid(row=0, column=2, sticky="n")
 
+        defaults = self.tech_defaults[self.tech_names[0]]
         # Entradas base
-        self.entry_eta = self._add_entry(left, "η_FE base (0-1):", self.defaults["eta_fe"])
-        self.entry_j   = self._add_entry(left, "j_tot base (A/m²):", self.defaults["j_tot"])
-        self.entry_U   = self._add_entry(left, "U_cell (V):", self.defaults["U_cell"])
-        self.entry_A   = self._add_entry(left, "Área A (m²):", self.defaults["A"])
-        self.entry_cA  = self._add_entry(left, "c_A (€/m²):", self.defaults["c_A"])
-        self.entry_cP  = self._add_entry(left, "c_P (€/kW):", self.defaults["c_P"])
-        self.entry_cel = self._add_entry(left, "c_el (€/MWh):", self.defaults["c_el_MWh"])
-        self.entry_fO  = self._add_entry(left, "f_O&M (-):", self.defaults["f_OandM"])
-        self.entry_i   = self._add_entry(left, "i (tasa interés):", self.defaults["i"])
-        self.entry_N   = self._add_entry(left, "N (años):", self.defaults["N"])
-        self.entry_top = self._add_entry(left, "t_op (h/año):", self.defaults["t_op"])
+        self.entry_eta = self._add_entry(left, "η_FE base (0-1):", str(defaults["eta_fe"]))
+        self.entry_j   = self._add_entry(left, "j_tot base (A/m²):", str(defaults["j_tot"]))
+        self.entry_U   = self._add_entry(left, "U_cell (V):", str(defaults["U_cell"]))
+        self.entry_A   = self._add_entry(left, "Área A (m²):", str(defaults["A"]))
+        self.entry_cA  = self._add_entry(left, "c_A (€/m²):", str(defaults["c_A"]))
+        self.entry_cP  = self._add_entry(left, "c_P (€/kW):", str(defaults["c_P"]))
+        self.entry_cel = self._add_entry(left, "c_el (€/MWh):", str(defaults["c_el_MWh"]))
+        self.entry_fO  = self._add_entry(left, "f_O&M (-):", str(defaults["f_OandM"]))
+        self.entry_i   = self._add_entry(left, "i (tasa interés):", str(defaults["i"]))
+        self.entry_N   = self._add_entry(left, "N (años):", str(defaults["N"]))
+        self.entry_top = self._add_entry(left, "t_op (h/año):", str(defaults["t_op"]))
 
         # BoP + Disponibilidad
         ttk.Label(mid, text="Balance de Planta (BoP)").pack(anchor="w", pady=(6,2))
-        self.entry_cA_bop = self._add_entry(mid, "c_A BoP extra (€/m²):", self.defaults["cA_BoP_extra"])
-        self.entry_cP_bop = self._add_entry(mid, "c_P BoP extra (€/kW):", self.defaults["cP_BoP_extra"])
-        self.entry_opex_bop = self._add_entry(mid, "OPEX BoP extra (€/año):", self.defaults["OPEX_BoP_extra_year"])
+        self.entry_cA_bop = self._add_entry(mid, "c_A BoP extra (€/m²):", str(defaults["cA_BoP_extra"]))
+        self.entry_cP_bop = self._add_entry(mid, "c_P BoP extra (€/kW):", str(defaults["cP_BoP_extra"]))
+        self.entry_opex_bop = self._add_entry(mid, "OPEX BoP extra (€/año):", str(defaults["OPEX_BoP_extra_year"]))
         ttk.Label(mid, text="Disponibilidad y Degradación").pack(anchor="w", pady=(10,2))
-        self.entry_avail = self._add_entry(mid, "Disponibilidad (0-1):", self.defaults["availability"])
-        self.entry_deg_eta = self._add_entry(mid, "Degradación η_FE (%/año):", self.defaults["deg_eta_yearly"])
-        self.entry_deg_j   = self._add_entry(mid, "Degradación j_tot (%/año):", self.defaults["deg_j_yearly"])
+        self.entry_avail = self._add_entry(mid, "Disponibilidad (0-1):", str(defaults["availability"]))
+        self.entry_deg_eta = self._add_entry(mid, "Degradación η_FE (%/año):", str(defaults["deg_eta_yearly"]))
+        self.entry_deg_j   = self._add_entry(mid, "Degradación j_tot (%/año):", str(defaults["deg_j_yearly"]))
 
         # Reemplazos y c_B
         ttk.Label(right, text="Reemplazos periódicos").pack(anchor="w", pady=(6,2))
-        self.entry_rep_every = self._add_entry(right, "Cada k años:", self.defaults["rep_interval_years"])
-        self.entry_rep_fracA = self._add_entry(right, "Frac. CAPEX área a reemplazar:", self.defaults["rep_frac_of_CAPEX_area"])
-        self.entry_rep_fracP = self._add_entry(right, "Frac. CAPEX potencia a reemplazar:", self.defaults["rep_frac_of_CAPEX_power"])
+        self.entry_rep_every = self._add_entry(right, "Cada k años:", str(defaults["rep_interval_years"]))
+        self.entry_rep_fracA = self._add_entry(right, "Frac. CAPEX área a reemplazar:", str(defaults["rep_frac_of_CAPEX_area"]))
+        self.entry_rep_fracP = self._add_entry(right, "Frac. CAPEX potencia a reemplazar:", str(defaults["rep_frac_of_CAPEX_power"]))
         ttk.Label(right, text="Precio de referencia (c_B)").pack(anchor="w", pady=(10,2))
-        self.entry_cb = self._add_entry(right, "c_B (€/kg):", self.defaults["c_B"])
+        self.entry_cb = self._add_entry(right, "c_B (€/kg):", str(defaults["c_B"]))
 
         # Mapa de entradas para guardar/cargar parámetros fácilmente
         self.entry_map = {
@@ -292,6 +311,7 @@ class LCOAGUI:
         # Botones
         btns = ttk.Frame(self.tab_inputs, padding=8); btns.pack(fill="x")
         ttk.Button(btns, text="Calcular LCOA", command=self.on_calculate).pack(side="left", padx=4)
+        ttk.Button(btns, text="Comparar tecnologías", command=self.on_compare).pack(side="left", padx=4)
         ttk.Button(btns, text="Mostrar desglose", command=self.on_breakdown).pack(side="left", padx=4)
         ttk.Button(btns, text="Comprobar unidades", command=self.on_units_check).pack(side="left", padx=4)
         ttk.Button(btns, text="Restablecer", command=self.reset_defaults).pack(side="left", padx=4)
@@ -299,6 +319,9 @@ class LCOAGUI:
 
         self.lbl_res = ttk.Label(self.tab_inputs, text="LCOA = —", font=("Segoe UI", 12, "bold"))
         self.lbl_res.pack(pady=6)
+
+        # Cargar parámetros iniciales de la tecnología seleccionada
+        self.on_switch_tech()
 
         # --- Tab: Sensibilidades 2D (LCOA) ---
         fs = ttk.Frame(self.tab_sens, padding=8); fs.pack(fill="both", expand=True)
@@ -416,6 +439,7 @@ class LCOAGUI:
             raise ValueError("Disponibilidad debe estar en (0,1].")
         if params["N"] <= 0:
             raise ValueError("N (años) debe ser > 0.")
+        self.tech_params[self.current_tech.get()] = dict(params)
         return params
 
     # ------ Gestión de parámetros: cargar/guardar/restablecer ------
@@ -431,20 +455,22 @@ class LCOAGUI:
         self.root.config(menu=menubar)
 
     def reset_defaults(self):
+        params = self.tech_defaults[self.current_tech.get()]
         for key, entry in self.entry_map.items():
-            if key in self.defaults:
-                entry.delete(0, tk.END)
-                entry.insert(0, self.defaults[key])
+            entry.delete(0, tk.END)
+            if key in params:
+                entry.insert(0, str(params[key]))
+        self.lbl_res.config(text="LCOA = —")
 
     def save_params(self):
         path = filedialog.asksaveasfilename(title="Guardar parámetros", defaultextension=".json",
                                             filetypes=[("JSON", "*.json"), ("Todos", "*.*")])
         if not path:
             return
-        data = {k: self.entry_map[k].get() for k in self.entry_map}
         try:
+            params = self._read_params()
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
+                json.dump(params, f, indent=2)
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo guardar: {e}")
 
@@ -464,6 +490,31 @@ class LCOAGUI:
                 ent = self.entry_map[key]
                 ent.delete(0, tk.END)
                 ent.insert(0, str(val))
+        try:
+            self._read_params()
+        except Exception:
+            pass
+
+    def on_switch_tech(self, event=None):
+        tech = self.current_tech.get()
+        params = self.tech_params.get(tech, self.tech_defaults[tech])
+        for key, entry in self.entry_map.items():
+            entry.delete(0, tk.END)
+            if key in params:
+                entry.insert(0, str(params[key]))
+        self.lbl_res.config(text="LCOA = —")
+
+    def on_compare(self):
+        try:
+            current = self._read_params()
+            self.tech_params[self.current_tech.get()] = dict(current)
+            lines = []
+            for tech in self.tech_names:
+                val, _ = lcoa_levelized(self.tech_params[tech])
+                lines.append(f"{tech}: {val:.4f} €/kg")
+            messagebox.showinfo("Comparación de tecnologías", "\n".join(lines))
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
 
     # ------ Acciones principales ------
     def on_calculate(self):
@@ -553,16 +604,89 @@ class LCOAGUI:
                     val, _ = lcoa_levelized(pp)
                     ZZ[i, j] = val
 
-            plt.figure()
-            cs = plt.contourf(XX, YY, ZZ, levels=20)
-            plt.colorbar(cs, label="LCOA [€/kg NH₃]")
+            fig, ax = plt.subplots()
+            cs = ax.contourf(XX, YY, ZZ, levels=20)
+            fig.colorbar(cs, ax=ax, label="LCOA [€/kg NH₃]")
             try:
-                cset = plt.contour(XX, YY, ZZ, levels=[cB], linewidths=2)
-                plt.clabel(cset, fmt={cB: f"Paridad {cB:.2f} €/kg"})
+                cset = ax.contour(XX, YY, ZZ, levels=[cB], linewidths=2)
+                ax.clabel(cset, fmt={cB: f"Paridad {cB:.2f} €/kg"})
             except Exception:
                 pass
-            plt.xlabel(xvar); plt.ylabel(yvar); plt.title("Mapa de paridad LCOA (contornos)")
-            plt.tight_layout(); plt.show(block=False)
+            ax.set_xlabel(xvar); ax.set_ylabel(yvar); ax.set_title("Mapa de paridad LCOA (contornos)")
+            fig.tight_layout(rect=[0, 0.07, 1, 1])
+            btn_ax = fig.add_axes([0.55, 0.01, 0.4, 0.05])
+            btn = Button(btn_ax, "Guardar curvas (ambas tecnologías)")
+            btn.on_clicked(lambda event: self.on_sens_save())
+            plt.show(block=False)
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+    def on_sens_save(self):
+        try:
+            current = self._read_params()
+            self.tech_params[self.current_tech.get()] = dict(current)
+            xvar = self.cbo_x.get()
+            yvar = self.cbo_y.get()
+            if xvar == yvar:
+                raise ValueError("Elige variables distintas para X e Y.")
+
+            x_min = float(self.ent_xmin.get()); x_max = float(self.ent_xmax.get()); xn = int(self.ent_xn.get())
+            y_min = float(self.ent_ymin.get()); y_max = float(self.ent_ymax.get()); yn = int(self.ent_yn.get())
+            cB = float(self.ent_cb_plot.get())
+
+            X = np.linspace(x_min, x_max, max(xn, 2))
+            Y = np.linspace(y_min, y_max, max(yn, 2))
+            XX, YY = np.meshgrid(X, Y)
+
+            def apply_xy(pp, val, name):
+                if name == "η_FE":
+                    pp["eta_fe"] = float(val)
+                elif name == "j_tot":
+                    pp["j_tot"] = float(val)
+                elif name == "U_cell":
+                    pp["U_cell"] = float(val)
+                elif name == "c_el":
+                    pp["c_el_MWh"] = float(val)
+                else:
+                    raise ValueError(f"Variable desconocida: {name}")
+
+            rows = [("tecnología", xvar, yvar)]
+            for tech in self.tech_names:
+                base = self.tech_params[tech]
+                ZZ = np.zeros_like(XX, dtype=float)
+                for i in range(YY.shape[0]):
+                    for j in range(YY.shape[1]):
+                        pp = dict(base)
+                        apply_xy(pp, XX[i, j], xvar)
+                        apply_xy(pp, YY[i, j], yvar)
+                        val, _ = lcoa_levelized(pp)
+                        ZZ[i, j] = val
+                fig = plt.figure()
+                try:
+                    cs = plt.contour(XX, YY, ZZ, levels=[cB])
+                    for path in cs.collections[0].get_paths():
+                        verts = path.vertices
+                        for vx, vy in verts:
+                            rows.append((tech, f"{vx:.6f}", f"{vy:.6f}"))
+                except Exception:
+                    pass
+                plt.close(fig)
+
+            if len(rows) <= 1:
+                messagebox.showinfo("Sin datos", "No se encontraron curvas de paridad en el rango especificado.")
+                return
+
+            path = filedialog.asksaveasfilename(
+                title="Guardar curvas de paridad como CSV",
+                defaultextension=".csv",
+                filetypes=[("CSV", "*.csv"), ("Todos", "*.*")]
+            )
+            if not path:
+                return
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                for r in rows:
+                    w.writerow(r)
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
